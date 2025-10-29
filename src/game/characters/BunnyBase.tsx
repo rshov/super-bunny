@@ -13,11 +13,12 @@ interface BunnyBaseProps {
 
 export default function BunnyBase({ type, position, gameState, setGameState }: BunnyBaseProps) {
   const meshRef = useRef<Mesh>(null)
-  const [velocity, setVelocity] = useState(new Vector3(0, 0, 0))
+  const velocity = useRef(new Vector3(0, 0, 0))
   const [isJumping, setIsJumping] = useState(false)
   const [isAttacking, setIsAttacking] = useState(false)
-  const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 })
   const [cameraAngle, setCameraAngle] = useState({ horizontal: 0, vertical: 0 })
+  const isDragging = useRef(false)
+  const hasDragged = useRef(false)
   const { camera } = useThree()
 
   const keys = useRef({
@@ -90,7 +91,28 @@ export default function BunnyBase({ type, position, gameState, setGameState }: B
       }
     }
 
+    const handleMouseDown = (event: MouseEvent) => {
+      // Only start dragging with left mouse button
+      if (event.button === 0) {
+        isDragging.current = true
+        hasDragged.current = false
+      }
+    }
+
+    const handleMouseUp = (event: MouseEvent) => {
+      if (event.button === 0) {
+        isDragging.current = false
+      }
+    }
+
     const handleMouseMove = (event: MouseEvent) => {
+      if (!isDragging.current) return
+      
+      // Track if we actually dragged (moved while holding mouse)
+      if (event.movementX !== 0 || event.movementY !== 0) {
+        hasDragged.current = true
+      }
+      
       const sensitivity = 0.002
       setCameraAngle(prev => ({
         horizontal: prev.horizontal + event.movementX * sensitivity,
@@ -98,7 +120,18 @@ export default function BunnyBase({ type, position, gameState, setGameState }: B
       }))
     }
 
+    const handleMouseLeave = () => {
+      isDragging.current = false
+      hasDragged.current = false
+    }
+
     const handleClick = () => {
+      // Don't attack if we were just dragging the camera
+      if (hasDragged.current) {
+        hasDragged.current = false
+        return
+      }
+      
       if (isAttacking) return // Prevent spam clicking
       
       setIsAttacking(true)
@@ -142,16 +175,22 @@ export default function BunnyBase({ type, position, gameState, setGameState }: B
     window.addEventListener('keyup', handleKeyUp)
     window.addEventListener('click', handleClick)
     window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mousedown', handleMouseDown)
+    window.addEventListener('mouseup', handleMouseUp)
+    window.addEventListener('mouseleave', handleMouseLeave)
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
       window.removeEventListener('keyup', handleKeyUp)
       window.removeEventListener('click', handleClick)
       window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mousedown', handleMouseDown)
+      window.removeEventListener('mouseup', handleMouseUp)
+      window.removeEventListener('mouseleave', handleMouseLeave)
     }
   }, [])
 
-  useFrame((state, delta) => {
+  useFrame((_state, delta) => {
     if (!meshRef.current) return
 
     const speed = 5
@@ -174,18 +213,18 @@ export default function BunnyBase({ type, position, gameState, setGameState }: B
 
     // Handle jumping
     if (keys.current.space && !isJumping) {
-      velocity.y = jumpForce
+      velocity.current.y = jumpForce
       setIsJumping(true)
     }
 
     // Apply gravity
-    velocity.y += gravity * delta
-    meshRef.current.position.y += velocity.y * delta
+    velocity.current.y += gravity * delta
+    meshRef.current.position.y += velocity.current.y * delta
 
     // Ground collision
     if (meshRef.current.position.y <= 0) {
       meshRef.current.position.y = 0
-      velocity.y = 0
+      velocity.current.y = 0
       setIsJumping(false)
     }
 
